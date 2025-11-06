@@ -68,57 +68,65 @@ async function processImage(imageData) {
 }
 
 // =========================================================================
-// *** VERSION 3 LOGIC: Using Word Coordinates for Column-based Extraction ***
+// *** VERSION 4 LOGIC: Robust Column Definition using Midpoint ***
 // =========================================================================
 function extractAndConfirm(data) {
     const words = data.words;
-    let itemColumn = null;
-    let quantityColumn = null;
+    let itemHeader = null;
+    let quantityHeader = null;
 
-    // 1. Find the coordinates of the "ITEM" and "SỐ LƯỢNG" headers
+    // 1. Find the header objects for "ITEM" and "SỐ LƯỢNG"
     for (const word of words) {
         const wText = word.text.toLowerCase();
-        if (wText.includes('item')) {
-            itemColumn = word.bbox;
+        if (!itemHeader && /item/i.test(wText)) {
+            itemHeader = word;
         }
-        if (wText.includes('lượng') || wText.includes('luong')) {
-            quantityColumn = word.bbox;
+        if (!quantityHeader && /lượng|luong/i.test(wText)) {
+            quantityHeader = word;
         }
+        if (itemHeader && quantityHeader) break; // Stop when both are found
     }
 
-    if (!itemColumn || !quantityColumn) {
-        alert('Không tìm thấy cột "ITEM" hoặc "SỐ LƯỢNG". Vui lòng đảm bảo ảnh chụp rõ ràng các tiêu đề cột.');
-        console.log("Headers not found. Full text:", data.text);
+    if (!itemHeader || !quantityHeader) {
+        alert('Không tìm thấy tiêu đề cột "ITEM" hoặc "SỐ LƯỢNG". Vui lòng đảm bảo ảnh chụp rõ ràng.');
+        console.error("Headers not found. Full text:", data.text);
         return;
     }
+    
+    // 2. Define column boundary using the midpoint between the two headers
+    const midpointX = (itemHeader.bbox.x1 + quantityHeader.bbox.x0) / 2;
+    const headersBottomY = Math.max(itemHeader.bbox.y1, quantityHeader.bbox.y1);
 
-    // 2. Group words into potential items and quantities based on their column position
-    const potentialItems = [];
-    const potentialQuantities = [];
+    // 3. Group all words into either the item column or quantity column
+    const itemWords = [];
+    const quantityWords = [];
 
     for (const word of words) {
-        // Check if the word is below the headers and within the correct column
-        const isItem = (word.bbox.x0 + word.bbox.x1) / 2 > itemColumn.x0 - 10 && (word.bbox.x0 + word.bbox.x1) / 2 < itemColumn.x1 + 10;
-        const isQuantity = (word.bbox.x0 + word.bbox.x1) / 2 > quantityColumn.x0 - 10 && (word.bbox.x0 + word.bbox.x1) / 2 < quantityColumn.x1 + 20;
+        // Must be below the headers
+        if (word.bbox.y0 < headersBottomY) continue;
 
-        if (isItem && word.bbox.y0 > itemColumn.y1 && /^[A-Z0-9]{5,}/.test(word.text)) {
-            potentialItems.push(word);
+        const wordCenterX = (word.bbox.x0 + word.bbox.x1) / 2;
+
+        // Check if word looks like an item code and is in the item column
+        if (wordCenterX < midpointX && /^[A-Z0-9-]{5,}/.test(word.text)) {
+            itemWords.push(word);
         }
-        if (isQuantity && word.bbox.y0 > quantityColumn.y1 && /^\d+$/.test(word.text) && word.text.length < 4) {
-            potentialQuantities.push(word);
+        // Check if word is a number and is in the quantity column
+        else if (wordCenterX > midpointX && /^\d+$/.test(word.text)) {
+            quantityWords.push(word);
         }
     }
     
-    // 3. Match items to quantities based on vertical alignment (Y-coordinate)
+    // 4. Match items to quantities based on vertical alignment (Y-coordinate)
     const foundPairs = [];
-    for (const item of potentialItems) {
+    for (const item of itemWords) {
         let bestMatch = null;
         let smallestYDiff = Infinity;
 
-        for (const quantity of potentialQuantities) {
+        for (const quantity of quantityWords) {
             const yDiff = Math.abs(item.bbox.y0 - quantity.bbox.y0);
             // Find the quantity on the same "line" (small vertical difference)
-            if (yDiff < 20 && yDiff < smallestYDiff) { // 20px tolerance
+            if (yDiff < (item.bbox.height * 1.5) && yDiff < smallestYDiff) {
                 smallestYDiff = yDiff;
                 bestMatch = quantity;
             }
@@ -130,9 +138,9 @@ function extractAndConfirm(data) {
                 quantity: parseInt(bestMatch.text, 10)
             });
             // Remove the matched quantity to prevent it from being matched again
-            const index = potentialQuantities.indexOf(bestMatch);
+            const index = quantityWords.indexOf(bestMatch);
             if (index > -1) {
-                potentialQuantities.splice(index, 1);
+                quantityWords.splice(index, 1);
             }
         } else {
              // If an item has no matching quantity, add it with a default of 1
@@ -142,11 +150,12 @@ function extractAndConfirm(data) {
 
     if (foundPairs.length === 0) {
         alert('Không tìm thấy cặp Item-Số lượng nào. Vui lòng thử lại với ảnh rõ hơn.');
-        console.log("Full OCR Data:", data);
+        console.log("Item candidates:", itemWords.map(w => w.text));
+        console.log("Quantity candidates:", quantityWords.map(w => w.text));
         return;
     }
 
-    // 4. Show confirmation modal
+    // 5. Show confirmation modal
     confirmationTableBody.innerHTML = foundPairs.map((pair, index) => `
         <tr data-index="${index}">
             <td><input type="text" class="form-control" value="${pair.item}"></td>
@@ -159,7 +168,7 @@ function extractAndConfirm(data) {
 }
 
 
-// --- Functions for adding, updating, and managing the main list (no major changes) ---
+// --- Functions for adding, updating, and managing the main list (no changes) ---
 
 addAllBtn.addEventListener('click', () => {
     const rows = confirmationTableBody.querySelectorAll('tr');
@@ -237,4 +246,3 @@ exportBtn.addEventListener('click', () => {
 
 // Initialize
 updateTable();
-
