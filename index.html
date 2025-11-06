@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quét Văn Bản - OCR Scanner</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px 0;
+        }
+        
+        .main-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        
+        #video {
+            width: 100%;
+            max-width: 640px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .preview-img {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn-custom {
+            border-radius: 25px;
+            padding: 10px 30px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .result-table {
+            margin-top: 20px;
+        }
+        
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .scan-count {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+        
+        .alert-custom {
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-container">
+            <h1 class="text-center mb-4">
+                <i class="fas fa-camera"></i> Quét và Nhận Diện Văn Bản
+            </h1>
+            
+            <!-- Camera Section -->
+            <div class="row">
+                <div class="col-md-6">
+                    <h4>Camera</h4>
+                    <video id="video" autoplay></video>
+                    <canvas id="canvas"></canvas>
+                    
+                    <div class="mt-3 text-center">
+                        <button id="startCamera" class="btn btn-primary btn-custom">
+                            <i class="fas fa-video"></i> Bật Camera
+                        </button>
+                        <button id="captureBtn" class="btn btn-success btn-custom" disabled>
+                            <i class="fas fa-camera"></i> Chụp Ảnh
+                        </button>
+                        <button id="stopCamera" class="btn btn-danger btn-custom" disabled>
+                            <i class="fas fa-stop"></i> Tắt Camera
+                        </button>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <label class="form-label">Hoặc tải ảnh lên:</label>
+                        <input type="file" id="fileInput" class="form-control" accept="image/*">
+                    </div>
+                    
+                    <div id="previewContainer"></div>
+                </div>
+                
+                <div class="col-md-6">
+                    <h4>Kết Quả Quét</h4>
+                    
+                    <div class="progress-container">
+                        <div class="alert alert-info alert-custom">
+                            <i class="fas fa-spinner fa-spin"></i> Đang xử lý ảnh...
+                        </div>
+                        <div class="progress">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="resultForm" style="display:none;">
+                        <div class="alert alert-success alert-custom">
+                            <i class="fas fa-check-circle"></i> Quét thành công! Vui lòng kiểm tra và chỉnh sửa nếu cần.
+                        </div>
+                        
+                        <form id="editForm">
+                            <div class="mb-3">
+                                <label class="form-label">Item:</label>
+                                <input type="text" id="itemInput" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Số lượng:</label>
+                                <input type="number" id="quantityInput" class="form-control" required min="0">
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-custom w-100">
+                                <i class="fas fa-plus"></i> Thêm vào Danh Sách
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Table -->
+        <div class="main-container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h4>Danh Sách Đã Quét</h4>
+                    <span class="scan-count">
+                        <i class="fas fa-list"></i> Tổng số mục: <span id="totalCount">0</span>
+                    </span>
+                </div>
+                <div>
+                    <button id="clearAll" class="btn btn-warning btn-custom">
+                        <i class="fas fa-trash"></i> Xóa Tất Cả
+                    </button>
+                    <button id="exportBtn" class="btn btn-success btn-custom">
+                        <i class="fas fa-file-excel"></i> Xuất Excel
+                    </button>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table class="table table-striped table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>STT</th>
+                            <th>Item</th>
+                            <th>Số Lượng</th>
+                            <th>Thao Tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">
+                                Chưa có dữ liệu. Bắt đầu quét để thêm mục.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
+    <script>
+        // Global variables
+        let stream = null;
+        let scannedData = [];
+        
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startCameraBtn = document.getElementById('startCamera');
+        const stopCameraBtn = document.getElementById('stopCamera');
+        const captureBtn = document.getElementById('captureBtn');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const progressContainer = document.querySelector('.progress-container');
+        const progressBar = document.getElementById('progressBar');
+        const resultForm = document.getElementById('resultForm');
+        const editForm = document.getElementById('editForm');
+        const itemInput = document.getElementById('itemInput');
+        const quantityInput = document.getElementById('quantityInput');
+        const resultsTableBody = document.getElementById('resultsTableBody');
+        const totalCount = document.getElementById('totalCount');
+        const clearAllBtn = document.getElementById('clearAll');
+        const exportBtn = document.getElementById('exportBtn');
+        
+        // Start Camera
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                startCameraBtn.disabled = true;
+                stopCameraBtn.disabled = false;
+                captureBtn.disabled = false;
+            } catch (error) {
+                alert('Không thể truy cập camera: ' + error.message);
+            }
+        });
+        
+        // Stop Camera
+        stopCameraBtn.addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                startCameraBtn.disabled = false;
+                stopCameraBtn.disabled = true;
+                captureBtn.disabled = true;
+            }
+        });
+        
+        // Capture Photo
+        captureBtn.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0);
+            
+            canvas.toBlob(blob => {
+                processImage(blob);
+            });
+        });
+        
+        // File Upload
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                processImage(file);
+            }
+        });
+        
+        // Process Image with OCR
+        async function processImage(imageData) {
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewContainer.innerHTML = `<img src="${e.target.result}" class="preview-img" alt="Preview">`;
+            };
+            reader.readAsDataURL(imageData);
+            
+            // Show progress
+            progressContainer.style.display = 'block';
+            resultForm.style.display = 'none';
+            progressBar.style.width = '0%';
+            
+            try {
+                const result = await Tesseract.recognize(
+                    imageData,
+                    'vie+eng', // Vietnamese and English
+                    {
+                        logger: m => {
+                            if (m.status === 'recognizing text') {
+                                const progress = Math.round(m.progress * 100);
+                                progressBar.style.width = progress + '%';
+                            }
+                        }
+                    }
+                );
+                
+                const text = result.data.text;
+                extractItemAndQuantity(text);
+                
+            } catch (error) {
+                alert('Lỗi khi xử lý ảnh: ' + error.message);
+                progressContainer.style.display = 'none';
+            }
+        }
+        
+        // Extract Item and Quantity from OCR text
+        function extractItemAndQuantity(text) {
+            progressContainer.style.display = 'none';
+            resultForm.style.display = 'block';
+            
+            // Simple extraction logic - you can enhance this based on your needs
+            const lines = text.split('\n').filter(line => line.trim());
+            
+            let item = '';
+            let quantity = 0;
+            
+            // Try to find patterns like "item: value" or "quantity: number"
+            for (let line of lines) {
+                const lowerLine = line.toLowerCase();
+                
+                if (lowerLine.includes('item') || lowerLine.includes('tên')) {
+                    item = line.split(/[:]/)[1]?.trim() || line;
+                }
+                
+                if (lowerLine.includes('quantity') || lowerLine.includes('số lượng') || lowerLine.includes('sl')) {
+                    const match = line.match(/\d+/);
+                    if (match) {
+                        quantity = parseInt(match[0]);
+                    }
+                }
+            }
+            
+            // If no specific pattern found, use first line as item and extract first number as quantity
+            if (!item && lines.length > 0) {
+                item = lines[0];
+            }
+            if (quantity === 0 && lines.length > 1) {
+                const match = text.match(/\d+/);
+                if (match) {
+                    quantity = parseInt(match[0]);
+                }
+            }
+            
+            itemInput.value = item;
+            quantityInput.value = quantity || 1;
+        }
+        
+        // Add to Results
+        editForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const item = itemInput.value.trim();
+            const quantity = parseInt(quantityInput.value);
+            
+            if (item && quantity > 0) {
+                addOrUpdateItem(item, quantity);
+                editForm.reset();
+                resultForm.style.display = 'none';
+                previewContainer.innerHTML = '';
+            }
+        });
+        
+        // Add or Update Item (merge if duplicate)
+        function addOrUpdateItem(item, quantity) {
+            const existingIndex = scannedData.findIndex(
+                data => data.item.toLowerCase() === item.toLowerCase()
+            );
+            
+            if (existingIndex !== -1) {
+                scannedData[existingIndex].quantity += quantity;
+            } else {
+                scannedData.push({ item, quantity });
+            }
+            
+            updateTable();
+        }
+        
+        // Update Table Display
+        function updateTable() {
+            if (scannedData.length === 0) {
+                resultsTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">
+                            Chưa có dữ liệu. Bắt đầu quét để thêm mục.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                resultsTableBody.innerHTML = scannedData.map((data, index) => `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${data.item}</td>
+                        <td>${data.quantity}</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="editItem(${index})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteItem(${index})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+            
+            totalCount.textContent = scannedData.length;
+        }
+        
+        // Edit Item
+        window.editItem = function(index) {
+            const data = scannedData[index];
+            const newItem = prompt('Sửa Item:', data.item);
+            const newQuantity = prompt('Sửa Số lượng:', data.quantity);
+            
+            if (newItem !== null && newQuantity !== null) {
+                scannedData[index].item = newItem;
+                scannedData[index].quantity = parseInt(newQuantity) || data.quantity;
+                updateTable();
+            }
+        };
+        
+        // Delete Item
+        window.deleteItem = function(index) {
+            if (confirm('Bạn có chắc muốn xóa mục này?')) {
+                scannedData.splice(index, 1);
+                updateTable();
+            }
+        };
+        
+        // Clear All
+        clearAllBtn.addEventListener('click', () => {
+            if (confirm('Bạn có chắc muốn xóa tất cả dữ liệu?')) {
+                scannedData = [];
+                updateTable();
+            }
+        });
+        
+        // Export to Excel
+        exportBtn.addEventListener('click', () => {
+            if (scannedData.length === 0) {
+                alert('Không có dữ liệu để xuất!');
+                return;
+            }
+            
+            const worksheet = XLSX.utils.json_to_sheet(
+                scannedData.map((data, index) => ({
+                    'STT': index + 1,
+                    'Item': data.item,
+                    'Số Lượng': data.quantity
+                }))
+            );
+            
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh Sách');
+            
+            const fileName = `Ket_Qua_Quet_${new Date().toISOString().slice(0,10)}.xlsx`;
+            XLSX.writeFile(workbook, fileName);
+        });
+        
+        // Initialize
+        updateTable();
+    </script>
+</body>
+</html>
