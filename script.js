@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
 });
 
-// Start Camera
+// Camera and UI functions
 startCameraBtn.addEventListener('click', async () => {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -33,7 +33,6 @@ startCameraBtn.addEventListener('click', async () => {
     } catch (error) { alert('Không thể truy cập camera: ' + error.message); }
 });
 
-// Stop Camera
 stopCameraBtn.addEventListener('click', () => {
     if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -42,7 +41,6 @@ stopCameraBtn.addEventListener('click', () => {
     }
 });
 
-// Capture Photo or File Upload
 captureBtn.addEventListener('click', () => {
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
@@ -50,7 +48,6 @@ captureBtn.addEventListener('click', () => {
 });
 fileInput.addEventListener('change', (e) => { if (e.target.files[0]) processImage(e.target.files[0]); });
 
-// Process Image with OCR
 async function processImage(imageData) {
     previewContainer.innerHTML = `<img src="${URL.createObjectURL(imageData)}" class="preview-img" alt="Preview">`;
     progressContainer.style.display = 'block'; progressBar.style.width = '0%';
@@ -63,58 +60,97 @@ async function processImage(imageData) {
             }}
         );
         progressContainer.style.display = 'none';
-        extractAndConfirm(result.data.text);
+        extractAndConfirm(result.data); // Pass the entire data object
     } catch (error) {
-        alert('Lỗi khi xử lý ảnh: ' + error.message);
+        alert('Lỗi khi phân tích ảnh: ' + error.message);
         progressContainer.style.display = 'none';
     }
 }
 
-// *** IMPROVED LOGIC: Extract all items from text and show confirmation modal ***
-function extractAndConfirm(text) {
-    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    const foundItems = [];
+// =========================================================================
+// *** VERSION 3 LOGIC: Using Word Coordinates for Column-based Extraction ***
+// =========================================================================
+function extractAndConfirm(data) {
+    const words = data.words;
+    let itemColumn = null;
+    let quantityColumn = null;
 
-    for (let i = 0; i < lines.length; i++) {
-        const currentLine = lines[i];
-
-        // Regex 1: Find lines with "STT Item Quantity" all in one. E.g., "9 WNK79255 35"
-        let match = currentLine.match(/^\s*\d+\s+([A-Z0-9]+)\s+(\d+)\s*$/);
-        if (match) {
-            foundItems.push({ item: match[1], quantity: parseInt(match[2], 10) });
-            continue; // Go to the next line
+    // 1. Find the coordinates of the "ITEM" and "SỐ LƯỢNG" headers
+    for (const word of words) {
+        const wText = word.text.toLowerCase();
+        if (wText.includes('item')) {
+            itemColumn = word.bbox;
         }
-
-        // Regex 2: Find lines with "STT Item" only. E.g., "3 100667"
-        match = currentLine.match(/^\s*\d+\s+([A-Z0-9]+)\s*$/);
-        if (match) {
-            const item = match[1];
-            let quantity = 1; // Default quantity
-
-            // Look ahead to the next line to see if it's a number (the quantity)
-            if (i + 1 < lines.length) {
-                const nextLine = lines[i + 1];
-                const quantityMatch = nextLine.match(/^\s*(\d+)\s*$/);
-                // Make sure the number isn't too large (likely not a quantity) or another item code
-                if (quantityMatch && !isNaN(parseInt(quantityMatch[1], 10)) && nextLine.length < 5) {
-                    quantity = parseInt(quantityMatch[1], 10);
-                    i++; // Skip the next line since we've processed it as a quantity
-                }
-            }
-            foundItems.push({ item: item, quantity: quantity });
+        if (wText.includes('lượng') || wText.includes('luong')) {
+            quantityColumn = word.bbox;
         }
     }
 
-    if (foundItems.length === 0) {
-        alert('Không tìm thấy item nào hợp lệ. Vui lòng thử lại với ảnh rõ hơn hoặc kiểm tra kết quả OCR.');
-        console.log("OCR Result:\n", text); // Log OCR result for debugging
+    if (!itemColumn || !quantityColumn) {
+        alert('Không tìm thấy cột "ITEM" hoặc "SỐ LƯỢNG". Vui lòng đảm bảo ảnh chụp rõ ràng các tiêu đề cột.');
+        console.log("Headers not found. Full text:", data.text);
         return;
     }
 
-    confirmationTableBody.innerHTML = foundItems.map((item, index) => `
+    // 2. Group words into potential items and quantities based on their column position
+    const potentialItems = [];
+    const potentialQuantities = [];
+
+    for (const word of words) {
+        // Check if the word is below the headers and within the correct column
+        const isItem = (word.bbox.x0 + word.bbox.x1) / 2 > itemColumn.x0 - 10 && (word.bbox.x0 + word.bbox.x1) / 2 < itemColumn.x1 + 10;
+        const isQuantity = (word.bbox.x0 + word.bbox.x1) / 2 > quantityColumn.x0 - 10 && (word.bbox.x0 + word.bbox.x1) / 2 < quantityColumn.x1 + 20;
+
+        if (isItem && word.bbox.y0 > itemColumn.y1 && /^[A-Z0-9]{5,}/.test(word.text)) {
+            potentialItems.push(word);
+        }
+        if (isQuantity && word.bbox.y0 > quantityColumn.y1 && /^\d+$/.test(word.text) && word.text.length < 4) {
+            potentialQuantities.push(word);
+        }
+    }
+    
+    // 3. Match items to quantities based on vertical alignment (Y-coordinate)
+    const foundPairs = [];
+    for (const item of potentialItems) {
+        let bestMatch = null;
+        let smallestYDiff = Infinity;
+
+        for (const quantity of potentialQuantities) {
+            const yDiff = Math.abs(item.bbox.y0 - quantity.bbox.y0);
+            // Find the quantity on the same "line" (small vertical difference)
+            if (yDiff < 20 && yDiff < smallestYDiff) { // 20px tolerance
+                smallestYDiff = yDiff;
+                bestMatch = quantity;
+            }
+        }
+
+        if (bestMatch) {
+            foundPairs.push({
+                item: item.text,
+                quantity: parseInt(bestMatch.text, 10)
+            });
+            // Remove the matched quantity to prevent it from being matched again
+            const index = potentialQuantities.indexOf(bestMatch);
+            if (index > -1) {
+                potentialQuantities.splice(index, 1);
+            }
+        } else {
+             // If an item has no matching quantity, add it with a default of 1
+             foundPairs.push({ item: item.text, quantity: 1 });
+        }
+    }
+
+    if (foundPairs.length === 0) {
+        alert('Không tìm thấy cặp Item-Số lượng nào. Vui lòng thử lại với ảnh rõ hơn.');
+        console.log("Full OCR Data:", data);
+        return;
+    }
+
+    // 4. Show confirmation modal
+    confirmationTableBody.innerHTML = foundPairs.map((pair, index) => `
         <tr data-index="${index}">
-            <td><input type="text" class="form-control" value="${item.item}"></td>
-            <td><input type="number" class="form-control" value="${item.quantity}" min="1"></td>
+            <td><input type="text" class="form-control" value="${pair.item}"></td>
+            <td><input type="number" class="form-control" value="${pair.quantity}" min="1"></td>
             <td><button class="btn btn-sm btn-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
         </tr>
     `).join('');
@@ -122,7 +158,9 @@ function extractAndConfirm(text) {
     confirmationModal.show();
 }
 
-// Add all confirmed items to the main list
+
+// --- Functions for adding, updating, and managing the main list (no major changes) ---
+
 addAllBtn.addEventListener('click', () => {
     const rows = confirmationTableBody.querySelectorAll('tr');
     rows.forEach(row => {
@@ -133,10 +171,9 @@ addAllBtn.addEventListener('click', () => {
         if (item && quantity > 0) addOrUpdateItem(item, quantity);
     });
     confirmationModal.hide();
-    previewContainer.innerHTML = '<i class="fas fa-image fa-3x text-muted"></i><p class="text-muted">Ảnh đã chụp hoặc tải lên sẽ hiện ở đây.</p>';
+    previewContainer.innerHTML = '<i class="fas fa-image fa-3x text-muted"></i><p class="text-muted mt-2">Ảnh đã chụp sẽ hiện ở đây.</p>';
 });
 
-// Add or Update Item (merge if duplicate)
 function addOrUpdateItem(item, quantity) {
     const existingIndex = scannedData.findIndex(data => data.item.toLowerCase() === item.toLowerCase());
     if (existingIndex !== -1) {
@@ -147,7 +184,6 @@ function addOrUpdateItem(item, quantity) {
     updateTable();
 }
 
-// Update main table display
 function updateTable() {
     if (scannedData.length === 0) {
         resultsTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Chưa có dữ liệu.</td></tr>';
@@ -167,7 +203,6 @@ function updateTable() {
     totalCount.textContent = scannedData.length;
 }
 
-// Edit/Delete/Clear/Export functions
 window.editItem = function(index) {
     const data = scannedData[index];
     const newItem = prompt('Sửa Item:', data.item);
@@ -178,17 +213,20 @@ window.editItem = function(index) {
         updateTable();
     }
 };
+
 window.deleteItem = function(index) {
     if (confirm('Bạn có chắc muốn xóa mục này?')) {
         scannedData.splice(index, 1);
         updateTable();
     }
 };
+
 clearAllBtn.addEventListener('click', () => {
     if (scannedData.length > 0 && confirm('Bạn có chắc muốn xóa tất cả dữ liệu?')) {
         scannedData = []; updateTable();
     }
 });
+
 exportBtn.addEventListener('click', () => {
     if (scannedData.length === 0) { alert('Không có dữ liệu để xuất!'); return; }
     const ws = XLSX.utils.json_to_sheet(scannedData.map((d, i) => ({'STT': i + 1, 'Item': d.item, 'Số Lượng': d.quantity})));
@@ -199,3 +237,4 @@ exportBtn.addEventListener('click', () => {
 
 // Initialize
 updateTable();
+

@@ -1,15 +1,16 @@
 body { 
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
     min-height: 100vh; 
-    padding: 20px 0; 
+    padding: 1rem 0; 
+    font-size: 16px;
 }
 
 .main-container { 
     background: white; 
     border-radius: 15px; 
     box-shadow: 0 10px 40px rgba(0,0,0,0.1); 
-    padding: 30px; 
-    margin-bottom: 20px; 
+    padding: 2rem; 
+    margin-bottom: 1.5rem; 
 }
 
 #video { 
@@ -17,6 +18,7 @@ body {
     max-width: 640px; 
     border-radius: 10px; 
     box-shadow: 0 5px 15px rgba(0,0,0,0.2); 
+    background-color: #333;
 }
 
 #canvas { 
@@ -26,12 +28,12 @@ body {
 .preview-img { 
     max-width: 100%; 
     border-radius: 10px; 
-    margin-top: 20px; 
+    margin-top: 1rem; 
 }
 
 .btn-custom { 
     border-radius: 25px; 
-    padding: 10px 30px; 
+    padding: 10px 25px; 
     font-weight: 600; 
     transition: all 0.3s; 
 }
@@ -43,7 +45,7 @@ body {
 
 .progress-container { 
     display: none; 
-    margin-top: 20px; 
+    margin-top: 1rem; 
 }
 
 .table-container { 
@@ -58,9 +60,49 @@ body {
     border-radius: 25px; 
     font-weight: 600; 
     display: inline-block; 
-    margin-bottom: 15px; 
+    margin-bottom: 1rem; 
 }
 
 .alert-custom { 
     border-radius: 10px; 
+}
+
+/* ================================== */
+/* CSS CHO ĐIỆN THOẠI (RESPONSIVE)    */
+/* ================================== */
+@media (max-width: 768px) {
+    body {
+        padding: 0;
+    }
+
+    .main-container {
+        padding: 1rem;
+        margin: 0.5rem;
+        border-radius: 10px;
+    }
+
+    .page-title {
+        font-size: 1.75rem;
+    }
+
+    .btn-custom {
+        padding: 8px 18px;
+        font-size: 0.9rem;
+    }
+
+    #previewContainer {
+        margin-top: 1rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .d-flex.justify-content-between {
+        flex-direction: column;
+        align-items: stretch !important;
+        text-align: center;
+    }
+
+    .d-flex.justify-content-between > div {
+        margin-bottom: 0.5rem;
+    }
 }
